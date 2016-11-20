@@ -1,1 +1,3 @@
-# debug_-performance
+# debug_performance
+
+- [strace](doc/strace.md)
