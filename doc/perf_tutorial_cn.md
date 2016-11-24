@@ -2,19 +2,21 @@
 - [简介](#简介)
   - [命令](#命令)
   - [事件](#事件)
-    - [Hardware events](#Hardware_events)
-- [使用 perf stat 统计](#使用_perf_stat_统计)
+    - [Hardware events](#Hardware-events)
+- [使用 perf stat 统计](#使用-perf-stat-统计)
   - [控制选择event的选项](#event选择控制)
     - [Modifiers](#Modifiers)
-    - [Hardware events](#Hardware_events)
-    - [multiple events](#multiple_events)
+    - [Hardware events](#Hardware-events)
+    - [multiple events](#multiple-events)
     - [重复测量](#重复测量)
-  - [Options controlling environment selection](#Options controlling environment selection)
+  - [Options controlling environment selection](#Options-controlling-environment-selection)
     - [计数和继承](#计数和继承)
-    - [Processor-wide mode](#Processor-wide mode)
+    - [Processor-wide mode](#Processor-wide-mode)
     - [挂载一个正在运行的进程](#挂载一个正在运行的进程)
   - [控制输出的选项](#控制输出的选项)
-- [perf record](#perf record)
+- [perf record](#perf-record)
+- [使用perf top实时分析](#使用perf-top实时分析)
+- [Benchmarking with perf bench](#Benchmarking-with-perf-bench)
 
 ## 简介
 `perf`是一个基于Linux 2.6以上版本的`profiler`工具。它在Linux性能测试中抽象掉了不同CPU硬件的影响。它采用命令行的方式交互操作。`perf`基于最新版本的Linux kernel暴露的`perf_events`接口工作。这篇文章是一个`perl`工具的演示范例。环境基于操作系统Ubuntu 11.04(2.6.38-8-generic版本内核)，硬件HP 6710b(dual-core Intel Core2 T7100 CPU)。为了方便阅读，有些输出被省略为(`[...]`)。
@@ -718,9 +720,12 @@ Using perf annotate on kernel code
 The perf tool does not know how to extract symbols from compressed kernel images (vmlinuz). As in the case of perf report, users must pass the path of the uncompressed kernel using the -k option:
 perf annotate -k /tmp/vmlinux -d symbol
 Again, this only works if the kernel is compiled to with debug symbols.
-Live analysis with perf top
 
-The perf tool can operate in a mode similar to the Linux top tool, printing sampled functions in real time. The default sampling event is cycles and default order is descending number of samples per symbol, thus perf top shows the functions where most of the time is spent. By default, perf top operates in processor-wide mode, monitoring all online CPUs at both user and kernel levels. It is possible to monitor only a subset of the CPUS using the -C option.
+## 使用perf top实时分析
+`perf`工具可以像`top`工具一样操作，实时打印出采样到的函数。默认采样`evet`是`cycles`，默认降序排列，这样可以显示出最耗时的函数。默认工作在`processor-wide`模式，监控全部的在线CPU，用户空间和内核空间。也可以使用`-C`参数指定监控的CPU。
+
+下面的描述已经过时了，故不翻译。
+```
 perf top
 -------------------------------------------------------------------------------------------------------------------------------------------------------
   PerfTop:     260 irqs/sec  kernel:61.5%  exact:  0.0% [1000Hz
@@ -743,8 +748,11 @@ cycles],  (all, 2 CPUs)
                6.00  1.8% __pthread_mutex_unlock_usercnt /lib/i386-linux-gnu/libpthread-2.13.so
                5.00  1.5% native_sched_clock             [kernel.kallsyms]
                5.00  1.5% drm_addbufs_sg                 /lib/modules/2.6.38-8-generic/kernel/drivers/gpu/drm/drm.ko
+```
 By default, the first column shows the aggregated number of samples since the beginning of the run. By pressing the 'Z' key, this can be changed to print the number of samples since the last refresh. Recall that the cycle event counts CPU cycles when the processor is not in halted state, i.e. not idle. Therefore this is not equivalent to wall clock time. Furthermore, the event is also subject to frequency scaling.
+
 It is also possible to drill down into single functions to see which instructions have the most samples. To drill down into a specify function, press the 's' key and enter the name of the function. Here we selected the top function noploop (not shown above):
+```
 ------------------------------------------------------------------------------------------------------------------------------------------
    PerfTop:    2090 irqs/sec  kernel:50.4%  exact:  0.0% [1000Hz cycles],  (all, 16 CPUs)
 ------------------------------------------------------------------------------------------------------------------------------------------
@@ -754,8 +762,9 @@ Showing cycles for noploop
        0  0.0%     4003a1:   55                      push   %rbp
        0  0.0%     4003a2:   48 89 e5                mov    %rsp,%rbp
     3550 100.0%    4003a5:   eb fe                   jmp    4003a5 <noploop+0x4>
+```
 
-Benchmarking with perf bench
+## Benchmarking with perf bench
 
 The perf bench command includes a number of multi-threaded microbenchmarks to exercise different subsystems in the Linux kernel and system calls. This allows hackers to easily stress and measure the impact of changes, and therefore help mitigate performance regressions.
 It also serves as a general benchmark framework, enabling developers to easily create test cases and transparently integrate and make use of the rich perf tool subsystem.
