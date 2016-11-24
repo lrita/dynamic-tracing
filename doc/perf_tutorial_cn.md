@@ -3,6 +3,18 @@
   - [命令](#命令)
   - [事件](#事件)
     - [Hardware events](#Hardware events)
+- [使用 perf stat 统计](#使用 perf stat 统计)
+  - [控制选择event的选项](#event选择控制)
+    - [Modifiers](#Modifiers)
+    - [Hardware events](#Hardware events)
+    - [multiple events](#multiple events)
+    - [重复测量](#重复测量)
+  - [Options controlling environment selection](#Options controlling environment selection)
+    - [计数和继承](#计数和继承)
+    - [Processor-wide mode](#Processor-wide mode)
+    - [挂载一个正在运行的进程](#挂载一个正在运行的进程)
+  - [控制输出的选项](#控制输出的选项)
+- [perf record](#perf record)
 
 ## 简介
 `perf`是一个基于Linux 2.6以上版本的`profiler`工具。它在Linux性能测试中抽象掉了不同CPU硬件的影响。它采用命令行的方式交互操作。`perf`基于最新版本的Linux kernel暴露的`perf_events`接口工作。这篇文章是一个`perl`工具的演示范例。环境基于操作系统Ubuntu 11.04(2.6.38-8-generic版本内核)，硬件HP 6710b(dual-core Intel Core2 T7100 CPU)。为了方便阅读，有些输出被省略为(`[...]`)。
@@ -162,9 +174,10 @@ PMU hardware events are CPU specific and documented by the CPU vendor. The perf 
 Intel PMU event tables: Appendix A of manual [here](http://www.intel.com/Assets/PDF/manual/253669.pdf)
 AMD PMU event table: section 3.14 of manual [here](http://support.amd.com/us/Processor_TechDocs/31116.pdf)
 
-## Counting with perf stat
+## 使用 perf stat 统计
+对perf支持的`event`，perf可以在程序运行过程中统计。在统计模式下，在程序运行结束后，`event`发生的次数被简单的聚合并输出在命令行中。可以采用以下命令来生成这些统计。例如：
 
-For any of the supported events, perf can keep a running count during process execution. In counting modes, the occurrences of events are simply aggregated and presented on standard output at the end of an application run. To generate these statistics, use the stat command of perf. For instance:
+```
 perf stat -B dd if=/dev/zero of=/dev/null count=1000000
 
 1000000+0 records in
@@ -185,52 +198,88 @@ perf stat -B dd if=/dev/zero of=/dev/null count=1000000
        956.474238 task-clock-msecs         #      0.999 CPUs
 
        0.957617512  seconds time elapsed
+```
+在没有特殊指定`event`时，`perf stat`收集以上通用`event`。有一些`software events`，例如`context-switches`，也有一些常见`hardware events`，例如`cycles`。在哈希签名后，可以得到一些数据相除产生的统计结果，例如`'IPC' (instructions per cycle)`。
 
-With no events specified, perf stat collects the common events listed above. Some are software events, such as context-switches, others are generic hardware events such as cycles. After the hash sign, derived metrics may be presented, such as 'IPC' (instructions per cycle).
-Options controlling event selection
-It is possible to measure one or more events per run of the perf tool. Events are designated using their symbolic names followed by optional unit masks and modifiers. Event names, unit masks, and modifiers are case insensitive.
-By default, events are measured at both user and kernel levels:
+### event选择控制
+在执行perf工具时，可以测量一个或者多个`event`。可以通过`event`的名字、`unit masks`和`modifiers`来指定`event`，它们都是不区分大小写的。
+
+默认情况下，用户空间和内核空间的`event`都会被测量：
+```
 perf stat -e cycles dd if=/dev/zero of=/dev/null count=100000
-To measure only at the user level, it is necessary to pass a modifier:
+```
+
+只测量用户空间的`event`，需要追加一个`modifier`:
+```
 perf stat -e cycles:u dd if=/dev/zero of=/dev/null count=100000
-To measure both user and kernel (explicitly):
+```
+
+用户空间、内核空间都测量:
+```
 perf stat -e cycles:uk dd if=/dev/zero of=/dev/null count=100000
-Modifiers
-Events can optionally have a modifier by appending a colon and one or more modifiers. Modifiers allow the user to restrict when events are counted.
-To measure a PMU event and pass modifiers:
+```
+
+#### Modifiers
+用户通过限定`Modifiers`来选择统计哪些`event`。
+
+统计一个PMU `event`：
+```
 perf stat -e instructions:u dd if=/dev/zero of=/dev/null count=100000
-In this example, we are measuring the number of instructions at the user level. Note that for actual events, the modifiers depends on the underlying PMU model. All modifiers can be combined at will. Here is a simple table to summarize the most common modifiers for Intel and AMD x86 processors.
-Modifiers	Description	Example
-u	monitor at priv level 3, 2, 1 (user)	event:u
-k	monitor at priv level 0 (kernel)	event:k
-h	monitor hypervisor events on a virtualization environment	event:h
-H	monitor host machine on a virtualization environment	event:H
-G	monitor guest machine on a virtualization environment	event:G
-All modifiers above are considered as a boolean (flag).
-Hardware events
+```
+
+在这个例子中，我们统计`instructions`在用户空间发生的次数。可以把全部的`modifiers`拼接在一起。下面有一个简单的表格来说`Intel and AMD x86`CPU下明常见的`modifiers`:
+
+| Modifiers | 描述 | 实例 |
+| ----- | ----- | ----- |
+| u | 监控用户空间 | event:u |
+| k | 监控内核空间 | event:k |
+| h | 监控虚拟化环境下的hypervisor events | event:h |
+| H	| 监控虚拟化环境下宿主机 | event:H |
+| G | 监控虚拟化环境下客户机	| event:G |
+
+全部`modifiers`都是boolean型的
+
+#### Hardware events
 To measure an actual PMU as provided by the HW vendor documentation, pass the hexadecimal parameter code:
+```
 perf stat -e r1a8 -a sleep 1
 
 Performance counter stats for 'sleep 1':
 
             210,140 raw 0x1a8
        1.001213705  seconds time elapsed
-multiple events
-To measure more than one event, simply provide a comma-separated list with no space:
+```
+
+#### multiple events
+统计多余一种`event`，可以采用逗号分隔的方式传递多个`event`给参数:
+```
 perf stat -e cycles,instructions,cache-misses [...]
-There is no theoretical limit in terms of the number of events that can be provided. If there are more events than there are actual hw counters, the kernel will automatically multiplex them. There is no limit of the number of software events. It is possible to simultaneously measure events coming from different sources.
+```
+理论上没有限制可以传递`event`的个数。如果需要统计的`event`个数大于硬件上面的计数器时，内核会自动的复用计数器。`software events`也没有数量的限制。可能同时统计来源不同的`event`。
+
 However, given that there is one file descriptor used per event and either per-thread (per-thread mode) or per-cpu (system-wide), it is possible to reach the maximum number of open file descriptor per process as imposed by the kernel. In that case, perf will report an error. See the troubleshooting section for help with this matter.
-multiplexing and scaling events
+
+#### multiplexing and scaling events
+
 If there are more events than counters, the kernel uses time multiplexing (switch frequency = HZ, generally 100 or 1000) to give each event a chance to access the monitoring hardware. Multiplexing only applies to PMU events. With multiplexing, an event is not measured all the time. At the end of the run, the tool scales the count based on total time enabled vs time running. The actual formula is:
-final_count = raw_count * time_enabled/time_running
+
+`final_count = raw_count * time_enabled/time_running`
+
 This provides an estimate of what the count would have been, had the event been measured during the entire run. It is very important to understand this is an estimate not an actual count. Depending on the workload, there will be blind spots which can introduce errors during scaling.
+
 Events are currently managed in round-robin fashion. Therefore each event will eventually get a chance to run. If there are N counters, then up to the first N events on the round-robin list are programmed into the PMU. In certain situations it may be less than that because some events may not be measured together or they compete for the same counter. Furthermore, the perf_events interface allows multiple tools to measure the same thread or CPU at the same time. Each event is added to the same round-robin list. There is no guarantee that all events of a tool are stored sequentially in the list.
+
 To avoid scaling (in the presence of only one active perf_event user), one can try and reduce the number of events. The following table provides the number of counters for a few common processors:
-Processor	Generic counters	Fixed counters
-Intel Core	2	3
-Intel Nehalem	4	3
+
+| Processor | Generic counters | Fixed counters|
+| ----- | ----- | ----- |
+| Intel Core | 2 | 3 |
+| Intel Nehalem | 4 | 3 |
+
 Generic counters can measure any events. Fixed counters can only measure one event. Some counters may be reserved for special purposes, such as a watchdog timer.
+
 The following examples show the effect of scaling:
+```
 perf stat -B -e cycles,cycles ./noploop 1
 
  Performance counter stats for './noploop 1':
@@ -239,8 +288,10 @@ perf stat -B -e cycles,cycles ./noploop 1
     2,812,304,340 cycles
 
        1.302481065  seconds time elapsed
+```
 
 Here, there is no multiplexing and thus no scaling. Let's add one more event:
+```
 perf stat -B -e cycles,cycles,cycles ./noploop 1
 
  Performance counter stats for './noploop 1':
@@ -250,10 +301,13 @@ perf stat -B -e cycles,cycles,cycles ./noploop 1
     2,809,315,647 cycles                    (scaled from 75.09%)
 
        1.295007067  seconds time elapsed
+```
 
 There was multiplexing and thus scaling. It can be interesting to try and pack events in a way that guarantees that event A and B are always measured together. Although the perf_events kernel interface provides support for event grouping, the current perf tool does not.
-Repeated measurement
-It is possible to use perf stat to run the same test workload multiple times and get for each count, the standard deviation from the mean.
+
+#### 重复测量
+用户可以执行`perf stat`多次，然后获得每次的结果和标准方差。
+```
 perf stat -r 5 sleep 1
 
  Performance counter stats for 'sleep 1' (5 runs):
@@ -270,16 +324,24 @@ perf stat -r 5 sleep 1
          1.584872 task-clock-msecs         #      0.002 CPUs    ( +-  12.480% )
 
        1.002251432  seconds time elapsed   ( +-   0.025% )
+```
+这里，`sleep`命令被执行了5此，然后取得平均值和标准方差。
 
-Here, sleep is run 5 times and the mean count for each event, along with ratio of std-dev/mean is printed.
-Options controlling environment selection
-The perf tool can be used to count events on a per-thread, per-process, per-cpu or system-wide basis. In per-thread mode, the counter only monitors the execution of a designated thread. When the thread is scheduled out, monitoring stops. When a thread migrated from one processor to another, counters are saved on the current processor and are restored on the new one.
-The per-process mode is a variant of per-thread where all threads of the process are monitored. Counts and samples are aggregated at the process level. The perf_events interface allows for automatic inheritance on fork() and pthread_create(). By default, the perf tool activates inheritance.
-In per-cpu mode, all threads running on the designated processors are monitored. Counts and samples are thus aggregated per CPU. An event is only monitoring one CPU at a time. To monitor across multiple processors, it is necessary to create multiple events. The perf tool can aggregate counts and samples across multiple processors. It can also monitor only a subset of the processors.
-Counting and inheritance
-By default, perf stat counts for all threads of the process and subsequent child processes and threads. This can be altered using the -i option. It is not possible to obtain a count breakdown per-thread or per-process.
-Processor-wide mode
-By default, perf stat counts in per-thread mode. To count on a per-cpu basis pass the -a option. When it is specified by itself, all online processors are monitored and counts are aggregated. For instance:
+### Options controlling environment selection
+`perf`工具在`per-thread`, `per-process`, `per-cpu`或者`system-wide`模式下可以统计`event`。
+
+在`per-thread`模式下，计数器只监控指定线程。当该线程休眠时，监控就停止了。当一个线程从一个CPU迁移至另一个CPU时，计数器也会跟着迁移至新的CPU上。
+
+`per-process`是`per-thread`的一个变体，该进程的全部线程都将被监控。计数器会简单在进程层面上简单的聚合起来。`perf_events`接口允许计数器在`fork()`和`pthread_create()`时自动继承原计数器。
+
+在`per-cpu`模式下，指定进程的全部线程都将被监控，计数器会在每一个CPU上进行聚合。一个`event`发生一次，只会被其中一个CPU记录。To monitor across multiple processors, it is necessary to create multiple events. The perf tool can aggregate counts and samples across multiple processors. It can also monitor only a subset of the processors.
+
+#### 计数和继承
+默认情况下，`perf stat`统计全部线程和派生进程(线程)。这个可以通过`-i`参数来改变。It is not possible to obtain a count breakdown per-thread or per-process.
+
+#### Processor-wide mode
+`perf stat`默认是`per-thread`模式，可以通过`-a`参数进入`per-cpu`模式。在没有特殊指定时，数据会自动聚合在一起。例如：
+```
 perf stat -B -ecycles:u,instructions:u -a dd if=/dev/zero of=/dev/null count=2000000
 
 2000000+0 records in
@@ -292,8 +354,11 @@ perf stat -B -ecycles:u,instructions:u -a dd if=/dev/zero of=/dev/null count=200
       764,086,803 instructions             #      0.383 IPC
 
        1.916930613  seconds time elapsed
+```
+
 This measurement collects events cycles and instructions across all CPUs. The duration of the measurement is determined by the execution of dd. In other words, this measurement captures execution of the dd process and anything else than runs at the user level on all CPUs.
 To time the duration of the measurement without actively consuming cycles, it is possible to use the =/usr/bin/sleep= command:
+```
 perf stat -B -ecycles:u,instructions:u -a sleep 5
 
  Performance counter stats for 'sleep 5':
@@ -302,10 +367,13 @@ perf stat -B -ecycles:u,instructions:u -a sleep 5
       596,796,091 instructions             #      0.779 IPC
 
        5.001191353  seconds time elapsed
-
+```
 It is possible to restrict monitoring to a subset of the CPUS using the -C option. A list of CPUs to monitor can be passed. For instance, to measure on CPU0, CPU2 and CPU3:
+```
 perf stat -B -e cycles:u,instructions:u -a -C 0,2-3 sleep 5
+```
 The demonstration machine has only two CPUs, but we can limit to CPU 1.
+```
 perf stat -B -e cycles:u,instructions:u -a -C 1 sleep 5
 
  Performance counter stats for 'sleep 5':
@@ -314,10 +382,12 @@ perf stat -B -e cycles:u,instructions:u -a -C 1 sleep 5
       225,595,284 instructions             #      0.749 IPC
 
        5.002125198  seconds time elapsed
-
+```
 Counts are aggregated across all the monitored CPUs. Notice how the number of counted cycles and instructions are both halved when measuring a single CPU.
-Attaching to a running process
-It is possible to use perf to attach to an already running thread or process. This requires the permission to attach along with the thread or process ID. To attach to a process, the -p option must be the process ID. To attach to the sshd service that is commonly running on many Linux machines, issue:
+
+#### 挂载一个正在运行的进程
+`perf`可以挂载在一个已经正在运行的进程上，前提是有足够的权限。用`-p`参数指定进程ID去挂载该进程。例如挂载在一个sshd进程上。
+```
 ps ax | fgrep sshd
 
  2262 ?        Ss     0:00 /usr/sbin/sshd -D
@@ -330,8 +400,11 @@ perf stat -e cycles -p 2262 sleep 2
     <not counted> cycles
 
        2.001263149  seconds time elapsed
+```
+重命令开始执行时，开始统计。在使用挂载进程的模式中，我们任然可以执行一个命令。这个命令通常用来指定统计的时间。如果没有这个命令，perf会统计直到进程被kill。默认情况下该指定进程的全部线程和子进程都会被监控到。如果要关掉这个选择，需要使用`-i`参数。
 
-What determines the duration of the measurement is the command to execute. Even though we are attaching to a process, we can still pass the name of a command. It is used to time the measurement. Without it, perf monitors until it is killed. Also note that when attaching to a process, all threads of the process are monitored. Furthermore, given that inheritance is on by default, child processes or threads will also be monitored. To turn this off, you must use the -i option. It is possible to attach a specific thread within a process. By thread, we mean kernel visible thread. In other words, a thread visible by the ps or top commands. To attach to a thread, the -t option must be used. We look at rsyslogd, because it always runs on Ubuntu 11.04, with multiple threads.
+也可以使用`-t`参数，只挂载在一个线程上。例如挂载在rsyslogd的一个线程上:
+```
 ps -L ax | fgrep rsyslogd | head -5
 
  889   889 ?        Sl     0:00 rsyslogd -c4
@@ -346,13 +419,15 @@ perf stat -e cycles -t 932 sleep 2
     <not counted> cycles
 
        2.001037289  seconds time elapsed
+```
 
 In this example, the thread 932 did not run during the 2s of the measurement. Otherwise, we would see a count value. Attaching to kernel threads is possible, though not really recommended. Given that kernel threads tend to be pinned to a specific CPU, it is best to use the cpu-wide mode.
 
-Options controlling output
+### 控制输出的选项
 perf stat can modify output to suit different needs.
 Pretty printing large numbers
 For most people, it is hard to read large numbers. With perf stat, it is possible to print large numbers using the comma separator for thousands (US-style). For that the -B option and the correct locale for LC_NUMERIC must be set. As the above example showed, Ubuntu already sets the locale information correctly. An explicit call looks as follows:
+```
 LC_NUMERIC=en_US.UTF8 perf stat -B -e cycles:u,instructions:u dd if=/dev/zero of=/dev/null count=10000000
 
 100000+0 records in
@@ -365,9 +440,10 @@ LC_NUMERIC=en_US.UTF8 perf stat -B -e cycles:u,instructions:u dd if=/dev/zero of
        38,176,009 instructions             #      0.395 IPC
 
        0.098556460  seconds time elapsed
-
+```
 Machine readable output
 perf stat can also print counts in a format that can easily be imported into a spreadsheet or parsed by scripts. The -x option alters the format of the output and allows users to pass a field delimiter. This makes is easy to produce CSV-style output:
+```
 perf stat  -x, date
 
 Thu May 26 21:11:07 EDT 2011
@@ -381,8 +457,10 @@ Thu May 26 21:11:07 EDT 2011
 2,CPU-migrations
 0,context-switches
 2.350642,task-clock-msecs
+```
 Note that the -x option is not compatible with -B.
-Sampling with perf record
+
+## perf record
 
 The perf tool can be used to collect profiles on per-thread, per-process and per-cpu basis.
 There are several commands associated with sampling: record, report, annotate. You must first collect the samples using perf record. This generates an output file called perf.data. That file can then be analyzed, possibly on another machine, using the perf report and perf annotate commands. The model is fairly similar to that of OProfile.
