@@ -153,7 +153,9 @@
 - `LLC-load-misses` last level cache读取失败次数。
 
 要理解CPU缓存是什么，需要先了解下CPU的缓存架构，如下图：
+
 ![pic/perf_3.png](pic/perf_3.png)
+
 1. `level-1 data cache`：一级数据缓存(I$)
 2. `level-1 inst cache`：一级指令缓存(D$)
 3. `MMU`：内存管理单元
