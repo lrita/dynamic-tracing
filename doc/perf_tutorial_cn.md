@@ -2,12 +2,12 @@
 - [简介](#简介)
   - [命令](#命令)
   - [事件](#事件)
-    - [Hardware events](#Hardware events)
-- [使用 perf stat 统计](#使用 perf stat 统计)
+    - [Hardware events](#Hardware_events)
+- [使用 perf stat 统计](#使用_perf_stat_统计)
   - [控制选择event的选项](#event选择控制)
     - [Modifiers](#Modifiers)
-    - [Hardware events](#Hardware events)
-    - [multiple events](#multiple events)
+    - [Hardware events](#Hardware_events)
+    - [multiple events](#multiple_events)
     - [重复测量](#重复测量)
   - [Options controlling environment selection](#Options controlling environment selection)
     - [计数和继承](#计数和继承)
@@ -171,7 +171,9 @@ List of pre-defined events (to be used in -e):
 
 #### Hardware events
 PMU hardware events are CPU specific and documented by the CPU vendor. The perf tool, if linked against the libpfm4 library, provides some short description of the events. For a listing of PMU hardware events for Intel and AMD processors, see
+
 Intel PMU event tables: Appendix A of manual [here](http://www.intel.com/Assets/PDF/manual/253669.pdf)
+
 AMD PMU event table: section 3.14 of manual [here](http://support.amd.com/us/Processor_TechDocs/31116.pdf)
 
 ## 使用 perf stat 统计
