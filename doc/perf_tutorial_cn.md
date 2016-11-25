@@ -15,6 +15,14 @@
     - [挂载一个正在运行的进程](#挂载一个正在运行的进程)
   - [控制输出的选项](#控制输出的选项)
 - [perf record](#perf-record)
+  - [基于事件采样 概述](#基于事件采样-概述)
+    - [默认event:cycle](#默认event:cycle)
+    - [收集采样点](#收集采样点)
+    - [Processor-wide mode](#Processor-wide-mode)
+  - [控制输出的选项](#控制输出的选项)
+  - [控制内核报告的输出选项](#控制内核报告的输出选项)
+    - [Processor-wide mode](#Processor-wide-mode)
+- [使用perf annotate分析事件来源](#使用perf-annotate分析事件来源)
 - [使用perf top实时分析](#使用perf-top实时分析)
 - [Benchmarking with perf bench](#Benchmarking-with-perf-bench)
 
@@ -465,31 +473,30 @@ Thu May 26 21:11:07 EDT 2011
 Note that the -x option is not compatible with -B.
 
 ## perf record
+可以使用`perf record`对程序运行时进行采样。默认生成一个文件`perf.data`，这个文件可以在另一个机器上用`perf report`、`perf annotate`去分析。这个模式跟`OProfile`很相似。
 
-The perf tool can be used to collect profiles on per-thread, per-process and per-cpu basis.
-There are several commands associated with sampling: record, report, annotate. You must first collect the samples using perf record. This generates an output file called perf.data. That file can then be analyzed, possibly on another machine, using the perf report and perf annotate commands. The model is fairly similar to that of OProfile.
-Event-based sampling overview
-Perf_events is based on event-based sampling. The period is expressed as the number of occurrences of an event, not the number of timer ticks. A sample is recorded when the sampling counter overflows, i.e., wraps from 2^64 back to 0. No PMU implements 64-bit hardware counters, but perf_events emulates such counters in software.
-The way perf_events emulates 64-bit counter is limited to expressing sampling periods using the number of bits in the actual hardware counters. If this is smaller than 64, the kernel silently truncates the period in this case. Therefore, it is best if the period is always smaller than 2^31 if running on 32-bit systems.
-On counter overflow, the kernel records information, i.e., a sample, about the execution of the program. What gets recorded depends on the type of measurement. This is all specified by the user and the tool. But the key information that is common in all samples is the instruction pointer, i.e. where was the program when it was interrupted.
-Interrupt-based sampling introduces skids on modern processors. That means that the instruction pointer stored in each sample designates the place where the program was interrupted to process the PMU interrupt, not the place where the counter actually overflows, i.e., where it was at the end of the sampling period. In some case, the distance between those two points may be several dozen instructions or more if there were taken branches. When the program cannot make forward progress, those two locations are indeed identical. For this reason, care must be taken when interpreting profiles.
-Default event: cycle counting
-By default, perf record uses the cycles event as the sampling event. This is a generic hardware event that is mapped to a hardware-specific PMU event by the kernel. For Intel, it is mapped to UNHALTED_CORE_CYCLES. This event does not maintain a constant correlation to time in the presence of CPU frequency scaling. Intel provides another event, called UNHALTED_REFERENCE_CYCLES but this event is NOT currently available with perf_events.
-On AMD systems, the event is mapped to CPU_CLK_UNHALTED and this event is also subject to frequency scaling. On any Intel or AMD processor, the cycle event does not count when the processor is idle, i.e., when it calls mwait().
-Period and rate
-The perf_events interface allows two modes to express the sampling period:
-the number of occurrences of the event (period)
-the average rate of samples/sec (frequency)
-The perf tool defaults to the average rate. It is set to 1000Hz, or 1000 samples/sec. That means that the kernel is dynamically adjusting the sampling period to achieve the target average rate. The adjustment in period is reported in the raw profile data. In contrast, with the other mode, the sampling period is set by the user and does not vary between samples. There is currently no support for sampling period randomization.
-Collecting samples
-By default, perf record operates in per-thread mode, with inherit mode enabled. The simplest mode looks as follows, when executing a simple program that busy loops:
+### 基于事件采样 概述
+`perf`基于事件采样来分析，耗时通过采样到的计数来反映。当`event`计数器溢出时，会被记录下来。当没有硬件实现`PMU event`计数器时，perf会有软件实现。[...]
+
+#### 默认event:cycle
+默认情况下，`perf`用`cycles event`作为采样事件。`perf_events`可以用2中模式设置采样周期，一种是采样点间隔，另一个是采样频率。
+
+`perf`默认使用采样频率，1000Hz，也就是1000 采样点/秒。内核可以动态的调整采样点的间隔来达到指定的采样频率。调整采样点的间隔信息会记录在原始profile文件里。反之，采样点间隔会固定为用户设置值。现在还不支持随机间隔采样。
+
+#### 收集采样点
+默认情况下，`perf record`采用`per-thread`和`inherit`模式。下面是一个最简单的例子：
+```
 perf record ./noploop 1
 
 [ perf record: Woken up 1 times to write data ]
 [ perf record: Captured and wrote 0.002 MB perf.data (~89 samples) ]
-The example above collects samples for event cycles at an average target rate of 1000Hz. The resulting samples are saved into the perf.data file. If the file already existed, you may be prompted to pass -f to overwrite it. To put the results in a specific file, use the -o option.
-WARNING: The number of reported samples is only an estimate. It does not reflect the actual number of samples collected. The estimate is based on the number of bytes written to the perf.data file and the minimal sample size. But the size of each sample depends on the type of measurement. Some samples are generated by the counters themselves but others are recorded to support symbol correlation during post-processing, e.g., mmap() information.
-To get an accurate number of samples for the perf.data file, it is possible to use the perf report command:
+```
+上面的例子采用1000Hz的采样频率对该程序进行`cycles`的采样。采样结果存储在`perf.data`文件里。如果该文件已经存在，你可以使用`-f`参数覆盖它。如果要指定输出文件名可以使用`-o`参数。
+
+_警告⚠️: 打印出的采样数(~89 samples)只是一个估计值，不能反映实际的采样结果。_
+
+为了获得perf.data文件中的实际采样值，我们需要`perf report`命令：
+```
 perf record ./noploop 1
 
 [ perf record: Woken up 1 times to write data ]
@@ -497,31 +504,40 @@ perf record ./noploop 1
 perf report -D -i perf.data | fgrep RECORD_SAMPLE | wc -l
 
 1280
+```
 
-To specify a custom rate, it is necessary to use the -F option. For instance, to sample on event instructions only at the user level and
-at an average rate of 250 samples/sec:
+为了指定采样频率，我们需要使用`-F`参数。示例：采用250Hz的采样率：
+```
 perf record -e instructions:u -F 250 ./noploop 4
 
 [ perf record: Woken up 1 times to write data ]
 [ perf record: Captured and wrote 0.049 MB perf.data (~2160 samples) ]
+```
 
-To specify a sampling period, instead, the -c option must be used. For instance, to collect a sample every 2000 occurrences of event instructions only at the user level only:
+为了指定采样间隔，需要使用`-c`参数，示例：每间隔2000个事件采集一个点：
+```
 perf record -e retired_instructions:u -c 2000 ./noploop 4
 
 [ perf record: Woken up 55 times to write data ]
 [ perf record: Captured and wrote 13.514 MB perf.data (~590431 samples) ]
+```
 
-Processor-wide mode
-In per-cpu mode mode, samples are collected for all threads executing on the monitored CPU. To switch perf record in per-cpu mode, the -a option must be used. By default in this mode, ALL online CPUs are monitored. It is possible to restrict to the a subset of CPUs using the -C option, as explained with perf stat above.
-To sample on cycles at both user and kernel levels for 5s on all CPUS with an average target rate of 1000 samples/sec:
+#### Processor-wide mode
+在`per-cpu`模式下，`perf`采集被监控的CPU上执行的全部线程。需要使用`-a`参数切换到`per-cpu`模式，默认情况下采用该模式，监控全部的CPU。
+
+也可以使用`-C`参数监控指定的CPU。
+
+采集全部的`cycles`，采集事件5秒钟，采样率1000Hz：
+```
 perf record -a -F 1000 sleep 5
 
 [ perf record: Woken up 1 times to write data ]
 [ perf record: Captured and wrote 0.523 MB perf.data (~22870 samples) ]
+```
+可以使用`perf report`分析采样结果。
 
-Sample analysis with perf report
-
-Samples collected by perf record are saved into a binary file called, by default, perf.data. The perf report command reads this file and generates a concise execution profile. By default, samples are sorted by functions with the most samples first. It is possible to customize the sorting order and therefore to view the data differently.
+`perf record`采样结果保存为二进制结果，默认的文件为`perf.data`。`perf report`读取这个文件，生成一个简明的`profile`。默认情况，采样根据被采集到的次数排序，也可以根据订制排序。
+```
 perf report
 
 # Events: 1K cycles
@@ -535,14 +551,19 @@ perf report
      2.13%      firefox-bin  firefox-bin                     [.] 0x1e3d
      1.40%  unity-panel-ser  libglib-2.0.so.0.2800.6         [.] 0x886f1
      [...]
-The column 'Overhead' indicates the percentage of the overall samples collected in the corresponding function. The second column reports the process from which the samples were collected. In per-thread/per-process mode, this is always the name of the monitored command. But in cpu-wide mode, the command can vary. The third column shows the name of the ELF image where the samples came from. If a program is dynamically linked, then this may show the name of a shared library. When the samples come from the kernel, then the pseudo ELF image name [kernel.kallsyms] is used. The fourth column indicates the privilege level at which the sample was taken, i.e. when the program was running when it was interrupted:
+```
+`Overhead`列表明该函数在全部采样点所占的比重，第二列是被监控的进程。第三列为采样点所在的`ELF image`的名字。如果程序采用动态链接，则会显示动态库的名称。当采用点来自内核是，则`ELF image`显示为`[kernel.kallsyms]`。第四列指明采样点所在的空间。
+例如：
+```
 [.] : user level
 [k]: kernel level
 [g]: guest kernel level (virtualization)
 [u]: guest os user space
 [H]: hypervisor
-The final column shows the symbol name.
-There are many different ways samples can be presented, i.e., sorted. To sort by shared objects, i.e., dsos:
+```
+最后一列为符号名。
+按`DSO`排序：
+```
 perf report --sort=dso
 
 # Events: 1K cycles
@@ -560,16 +581,24 @@ perf report --sort=dso
      1.38%  dbus-daemon
      1.36%  [drm]
      [...]
+```
 
-Options controlling output
-To make the output easier to parse, it is possible to change the column separator to a single character:
+### 控制输出的选项
+为了使输出结果容易被解析，需要改变每列之间的分隔符:
+```
 perf report -t
-Options controlling kernel reporting
-The perf tool does not know how to extract symbols form compressed kernel images (vmlinuz). Therefore, users must pass the path of the uncompressed kernel using the -k option:
+```
+
+### 控制内核报告的输出选项
+为了得到内核的符号，需要传递非压缩内核(`vmlinux`)给`perf report`，使用`-k`参数：
+```
 perf report -k /tmp/vmlinux
-Of course, this works only if the kernel is compiled to with debug symbols.
-Processor-wide mode
-In per-cpu mode, samples are recorded from all threads running on the monitored CPUs. As as result, samples from many different processes may be collected. For instance, if we monitor across all CPUs for 5s:
+```
+当然，只有在内核编译的debug符号，才能正常工作。
+
+#### Processor-wide mode
+在`per-cpu`模式下，全部CPU上运行的线程都会被采样。示例：采集全部CPU的运行状况5秒钟：
+```
 perf record -a sleep 5
 perf report
 
@@ -584,7 +613,10 @@ perf report
      4.07%    perf_2.6.38-8  perf_2.6.38-8               [.] 0x34e1b
      3.88%    perf_2.6.38-8  [kernel.kallsyms]           [k] format_decode
      [...]
-When the symbol is printed as an hexadecimal address, this is because the ELF image does not have a symbol table. This happens when binaries are stripped. We can sort by cpu as well. This could be useful to determine if the workload is well balanced:
+```
+当符号以十六进制地址的形式被打印出来，说明该`ELF image`找不到符号表，可能是二进制文件被`strip`了。
+我们可以以CPU消耗排序，这样可以查看负载是否平衡:
+```
 perf report --sort=cpu
 
 # Events: 354  cycles
@@ -594,11 +626,17 @@ perf report --sort=cpu
 #
    65.85%  1
    34.15%  0
-Overhead calculation
+```
+
+### 占比计算
+
 The overhead can be shown in two columns as 'Children' and 'Self' when perf collects callchains. The 'self' overhead is simply calculated by adding all period values of the entry - usually a function (symbol). This is the value that perf shows traditionally and sum of all the 'self' overhead values should be 100%.
 The 'children' overhead is calculated by adding all period values of the child functions so that it can show the total overhead of the higher level functions even if they don't directly execute much. 'Children' here means functions that are called from another (parent) function.
+
 It might be confusing that the sum of all the 'children' overhead values exceeds 100% since each of them is already an accumulation of 'self' overhead of its child functions. But with this enabled, users can find which function has the most overhead even if samples are spread over the children.
+
 Consider the following example; there are three functions like below.
+```
 void foo(void) {
     /* do something */
 }
@@ -612,8 +650,10 @@ int main(void) {
     bar()
     return 0;
 }
+```
 In this case 'foo' is a child of 'bar', and 'bar' is an immediate child of 'main' so 'foo' also is a child of 'main'. In other words, 'main' is a parent of 'foo' and 'bar', and 'bar' is a parent of 'foo'.
 Suppose all samples are recorded in 'foo' and 'bar' only. When it's recorded with callchains the output will show something like below in the usual (self-overhead-only) output of perf report:
+```
 Overhead  Symbol
 ........  .....................
   60.00%  foo
@@ -628,7 +668,9 @@ Overhead  Symbol
           --- bar
               main
               __libc_start_main
+```
 When the --children option is enabled, the 'self' overhead values of child functions (i.e. 'foo' and 'bar') are added to the parents to calculate the 'children' overhead. In this case the report could be displayed as:
+```
 Children      Self  Symbol
 ........  ........  ....................
  100.00%     0.00%  __libc_start_main
@@ -652,12 +694,17 @@ Children      Self  Symbol
               bar
               main
               __libc_start_main
+```
 In the above output, the 'self' overhead of 'foo' (60%) was add to the 'children' overhead of 'bar', 'main' and '__libc_start_main'. Likewise, the 'self' overhead of 'bar' (40%) was added to the 'children' overhead of 'main' and '__libc_start_main'.
-So '__libc_start_main' and 'main' are shown first since they have same (100%) 'children' overhead (even though they have zero 'self' overhead) and they are the parents of 'foo' and 'bar'.
-Since v3.16 the 'children' overhead is shown by default and the output is sorted by its values. The 'children' overhead is disabled by specifying --no-children option on the command line or by adding 'report.children = false' or 'top.children = false' in the perf config file.
-Source level analysis with perf annotate
 
-It is possible to drill down to the instruction level with perf annotate. For that, you need to invoke perf annotate with the name of the command to annotate. All the functions with samples will be disassembled and each instruction will have its relative percentage of samples reported:
+So '__libc_start_main' and 'main' are shown first since they have same (100%) 'children' overhead (even though they have zero 'self' overhead) and they are the parents of 'foo' and 'bar'.
+
+Since v3.16 the 'children' overhead is shown by default and the output is sorted by its values. The 'children' overhead is disabled by specifying --no-children option on the command line or by adding 'report.children = false' or 'top.children = false' in the perf config file.
+
+## 使用perf annotate分析事件来源
+
+可以使用`perf annotate`将分析挖掘到指令级别。
+For that, you need to invoke perf annotate with the name of the command to annotate. All the functions with samples will be disassembled and each instruction will have its relative percentage of samples reported:
 perf record ./noploop 5
 perf annotate -d ./noploop
 
