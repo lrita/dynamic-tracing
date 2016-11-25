@@ -6,6 +6,9 @@
 	- [Tutorial](https://perf.wiki.kernel.org/index.php/Tutorial) / [中文翻译](doc/perf_tutorial_cn.md)
 	- [perf 中使用的概念](doc/perf_concept.md)
 	- [perf stat](doc/perf_stat.md)
+	- [perf top](doc/perf_top.md)
+	- [perf record](doc/perf_record.md)
+	- [perf report](doc/perf_report.md)
 	- [perf Examples](http://www.brendangregg.com/perf.html)
 
 # Article

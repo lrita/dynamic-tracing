@@ -23,6 +23,7 @@
   - [控制内核报告的输出选项](#控制内核报告的输出选项)
     - [Processor-wide mode](#Processor-wide-mode)
 - [使用perf annotate分析事件来源](#使用perf-annotate分析事件来源)
+  - [在内核中使用perf annotate](#在内核中使用perf-annotate)
 - [使用perf top实时分析](#使用perf-top实时分析)
 - [Benchmarking with perf bench](#Benchmarking-with-perf-bench)
 
@@ -704,7 +705,7 @@ Since v3.16 the 'children' overhead is shown by default and the output is sorted
 ## 使用perf annotate分析事件来源
 
 可以使用`perf annotate`将分析挖掘到指令级别。
-For that, you need to invoke perf annotate with the name of the command to annotate. All the functions with samples will be disassembled and each instruction will have its relative percentage of samples reported:
+```
 perf record ./noploop 5
 perf annotate -d ./noploop
 
@@ -728,8 +729,9 @@ perf annotate -d ./noploop
    56.13 :    8048541:       3d ff e0 f5 05          cmp    $0x5f5e0ff,%eax
     0.00 :    8048546:       76 ea                   jbe    8048532 <main+0xae>
 [...]
-The first column reports the percentage of samples for function ==noploop()== captured for at that instruction. As explained earlier, you should interpret this information carefully.
-perf annotate can generate sourcecode level information if the application is compiled with -ggdb. The following snippet shows the much more informative output for the same execution of noploop when compiled with this debugging information.
+```
+第一列为每条指令被采样的占比。如果程序在编译时加入`-ggdb`参数，则`perf annotate`可以生成嵌入源码格式的信息。
+```
 ------------------------------------------------
  Percent |   Source code & Disassembly of noploop
 ------------------------------------------------
@@ -763,9 +765,13 @@ perf annotate can generate sourcecode level information if the application is co
    56.23 :    8048541:       3d ff e0 f5 05          cmp    $0x5f5e0ff,%eax
     0.00 :    8048546:       76 ea                   jbe    8048532 <main+0xae>
 [...]
-Using perf annotate on kernel code
+```
+
+### 在内核中使用perf annotate
 The perf tool does not know how to extract symbols from compressed kernel images (vmlinuz). As in the case of perf report, users must pass the path of the uncompressed kernel using the -k option:
+```
 perf annotate -k /tmp/vmlinux -d symbol
+```
 Again, this only works if the kernel is compiled to with debug symbols.
 
 ## 使用perf top实时分析
@@ -814,19 +820,25 @@ Showing cycles for noploop
 ## Benchmarking with perf bench
 
 The perf bench command includes a number of multi-threaded microbenchmarks to exercise different subsystems in the Linux kernel and system calls. This allows hackers to easily stress and measure the impact of changes, and therefore help mitigate performance regressions.
+
 It also serves as a general benchmark framework, enabling developers to easily create test cases and transparently integrate and make use of the rich perf tool subsystem.
-sched: Scheduler benchmarks
-Measures pipe(2) and socketpair(2) operations between multiple tasks. Allows the measurement of thread versus process context switch performance.
+
+### sched: Scheduler benchmarks
+Measures pipe(2) and socketpair(2) operations between multiple tasks. Allows the measurement of thread versus process
+context switch performance.
+```
 $perf bench sched messaging -g 64
 # Running 'sched/messaging' benchmark:
 # 20 sender and receiver processes per group
 # 64 groups == 2560 processes run
 
      Total time: 1.549 [sec]
-mem: Memory access benchmarks
-numa: NUMA scheduling and MM benchmarks
-futex: Futex stressing benchmarks
+```
+### mem: Memory access benchmarks
+### numa: NUMA scheduling and MM benchmarks
+### futex: Futex stressing benchmarks
 Deals with finer grained aspects of the kernel's implementation of futexes. It is mostly useful for kernel hacking. It currently supports wakeup and requeue/wait operations, as well as stressing the hashing scheme for both private and shared futexes. An example run for nCPU threads, each handling 1024 futexes measuring the hashing logic:
+```
 $ perf bench futex hash
 # Running 'futex/hash' benchmark:
 Run summary [PID 17428]: 4 threads, each operating on 1024 [private] futexes for 10 secs.
@@ -837,23 +849,31 @@ Run summary [PID 17428]: 4 threads, each operating on 1024 [private] futexes for
 [thread  3] futexes: 0x2778c40 ... 0x2779c3c [ 3563827 ops/sec ]
 
 Averaged 3544166 operations/sec (+- 2.01%), total secs = 10
-Troubleshooting and Tips
+```
+
+## Troubleshooting and Tips
 
 This section lists a number of tips to avoid common pitfalls when using perf.
-Open file limits
+### Open file limits
 The design of the perf_event kernel interface which is used by the perf tool, is such that it uses one file descriptor per event per-thread or per-cpu.
 On a 16-way system, when you do:
+```
 perf stat -e cycles sleep 1
+```
 You are effectively creating 16 events, and thus consuming 16 file descriptors.
 In per-thread mode, when you are sampling a process with 100 threads on the same 16-way system:
+```
 perf record -e cycles my_hundred_thread_process
+```
 Then, once all the threads are created, you end up with 100 * 1 (event) * 16 (cpus) = 1600 file descriptors. Perf creates one instance of the event on each CPU. Only when the thread executes on that CPU does the event effectively measure. This approach enforces sampling buffer locality and thus mitigates sampling overhead. At the end of the run, the tool aggregates all the samples into a single output file.
 In case perf aborts with 'too many open files' error, there are a few solutions:
-increase the number of per-process open files using ulimit -n. Caveat: you must be root
-limit the number of events you measure in one run
-limit the number of CPU you are measuring
-increasing open file limit
+- increase the number of per-process open files using ulimit -n. Caveat: you must be root
+- limit the number of events you measure in one run
+- limit the number of CPU you are measuring
+
+#### increasing open file limit
 The superuser can override the per-process open file limit using the ulimit shell builtin command:
+```
 ulimit -a
 [...]
 open files                      (-n) 1024
@@ -864,9 +884,11 @@ ulimit -a
 [...]
 open files                      (-n) 2048
 [...]
+```
 
-Binary identification with build-id
+### Binary identification with build-id
 The perf record command saves in the perf.data unique identifiers for all ELF images relevant to the measurement. In per-thread mode, this includes all the ELF images of the monitored processes. In cpu-wide mode, it includes all running processes running on the system. Those unique identifiers are generated by the linker if the -Wl,--build-id option is used. Thus, they are called build-id. The build-id are a helpful tool when correlating instruction addresses to ELF images. To extract all build-id entries used in a perf.data file, issue:
+```
 perf buildid-list -i perf.data
 
 06cb68e95cceef1ff4e80a3663ad339d9d6f0e43 [kernel.kallsyms]
@@ -878,25 +900,36 @@ fafad827c43e34b538aea792cc98ecfd8d387e2f /lib/i386-linux-gnu/ld-2.13.so
 0776add23cf3b95b4681e4e875ba17d62d30c7ae /lib/i386-linux-gnu/libdbus-1.so.3.5.4
 f22f8e683907b95384c5799b40daa455e44e4076 /lib/i386-linux-gnu/libc-2.13.so
 [...]
-The build-id cache
+```
+#### The build-id cache
 At the end of each run, the perf record command updates a build-id cache, with new entries for ELF images with samples. The cache contains:
-build-id for ELF images with samples
-copies of the ELF images with samples
+
+- build-id for ELF images with samples
+- copies of the ELF images with samples
+
 Given that build-id are immutable, they uniquely identify a binary. If a binary is recompiled, a new build-id is generated and a new copy of the ELF images is saved in the cache. The cache is saved on disk in a directory which is by default $HOME/.debug. There is a global configuration file ==/etc/perfconfig== which can be used by sysadmin to specify an alternate global directory for the cache:
+```
 $ cat /etc/perfconfig
 [buildid]
 dir = /var/tmp/.debug
+```
 In certain situations it may be beneficial to turn off the build-id cache updates altogether. For that, you must pass the -N option to perf record
+```
 perf record -N dd if=/dev/zero of=/dev/null count=100000
-Access Control
+```
+#### Access Control
 For some events, it is necessary to be root to invoke the perf tool. This document assumes that the user has root privileges. If you try to run perf with insufficient privileges, it will report
+```
 No permission to collect system-wide stats.
-Other Scenarios
+```
 
-Profiling sleep times
+## Other Scenarios
+
+### Profiling sleep times
 This feature shows where and how long a program is sleeping or waiting something.
 The first step is collecting data. We need to collect sched_stat and sched_switch events. Sched_stat events are not enough, because they are generated in the context of a task, which wakes up a target task (e.g. releases a lock). We need the same event but with a call-chain of the target task. This call-chain can be extracted from a previous sched_switch event.
 The second step is merging sched_start and sched_switch events. It can be done with help of "perf inject -s".
+```
 $ ./perf record -e sched:sched_stat_sleep -e sched:sched_switch  -e sched:sched_process_exit -g -o ~/perf.data.raw ~/foo
 $ ./perf inject -v -s -i ~/perf.data.raw -o ~/perf.data
 $ ./perf report --stdio --show-total-period -i ~/perf.data
@@ -936,18 +969,22 @@ $cat foo.c
                   select(0, NULL, NULL, NULL,&tv1);
           }
 ...
-Other Resources
+```
 
-Linux sourcecode
+## Other Resources
+
+### Linux sourcecode
 The perf tools sourcecode lives in the Linux kernel tree under /tools/perf. You will find much more documentation in | /tools/perf/Documentation. To build manpages, info pages and more, install these tools:
-asciidoc
-tetex-fonts
-tetex-dvips
-dialog
-tetex
-tetex-latex
-xmltex
-passivetex
-w3m
-xmlto
+
+- asciidoc
+- tetex-fonts
+- tetex-dvips
+- dialog
+- tetex
+- tetex-latex
+- xmltex
+- passivetex
+- w3m
+- xmlto
+
 and issue a make install-man from /tools/perf. This step is also required to be able to run perf help <command>.
