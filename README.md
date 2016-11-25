@@ -15,3 +15,4 @@
 - [动态追踪技术漫谈](doc/dynamic_tracing.md)
 - [Choosing a Linux Tracer](http://www.brendangregg.com/blog/2015-07-08/choosing-a-linux-tracer.html)
 - Linux的系统级性能剖析工具[1](http://files.cnblogs.com/files/jiayy/Linux的系统级性能剖析工具-perf-1.pdf)/[2](http://files.cnblogs.com/files/jiayy/Linux的系统级性能剖析工具-perf-2.pdf)/[3](http://files.cnblogs.com/files/jiayy/Linux的系统级性能剖析工具-perf-3.pdf)
+- [Performance Analysis Methodology(性能分析方法论)](http://www.brendangregg.com/methodology.html)
