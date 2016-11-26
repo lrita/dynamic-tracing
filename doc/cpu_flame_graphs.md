@@ -63,6 +63,7 @@ stap -s 32 -D MAXBACKTRACE=100 -D MAXSTRINGLEN=4096 -D MAXMAPENTRIES=10240 \
 ./stackcollapse-stap.pl out.stap-stacks > out.stap-folded
 cat out.stap-folded | ./flamegraph.pl > stap-kernel.svg
 ```
+或者采用春哥的[nginx-systemtap-toolkit](https://github.com/openresty/nginx-systemtap-toolkit#sample-bt)
 
 #### ktap
 ```
