@@ -10,6 +10,10 @@
 	- [perf record](doc/perf_record.md)
 	- [perf report](doc/perf_report.md)
 	- [perf Examples](http://www.brendangregg.com/perf.html)
+- [火焰图](http://www.brendangregg.com/flamegraphs.html)
+	- [白话火焰图](http://huoding.com/2016/08/18/531)
+	- [CPU Flame Graphs](http://www.brendangregg.com/FlameGraphs/cpuflamegraphs.html) [简述](doc/cpu_flame_graphs.md)
+
 
 # Article
 - [动态追踪技术漫谈](doc/dynamic_tracing.md)
